@@ -5,6 +5,8 @@
 
 const { validate } = require('jsonschema');
 const fs = require('fs');
+const os = require('os');
+const { isAbsolute, resolve, sep } = require('path');
 
 const DEFAULT_CONFIG = {
   using: '',
@@ -70,7 +72,9 @@ const CONFIG_SCHEMA = {
 
 const DEFAULT_DEFAULT_PER_PAGE = 30;
 
-const PATH = `${require('os').homedir()}/.evrythng-cli-config`;
+const LEGACY_PATH = `${os.homedir()}/.evrythng-cli-config`;
+const PATH = `${os.homedir()}/.evrythng`;
+const FILE = 'config';
 
 let data;
 
@@ -81,7 +85,7 @@ const validateConfig = (input) => {
   }
 };
 
-const write = () => fs.writeFileSync(PATH, JSON.stringify(data, null, 2), 'utf8');
+const write = () => fs.writeFileSync(resolve(PATH, FILE), JSON.stringify(data, null, 2), 'utf8');
 
 const migrateConfig = (input) => {
   // v1.1.0 - new defaultPerPage option
@@ -92,14 +96,28 @@ const migrateConfig = (input) => {
   write();
 };
 
-const load = () => {
-  if (!fs.existsSync(PATH)) {
+const load = async () => {
+  // Create the full path to the config, if it does not exist.
+  PATH.split(sep).reduce((parent, child) => {
+    const pwd = resolve(parent, child);
+    if (!fs.existsSync(pwd)) {
+      fs.mkdirSync(pwd);
+    }
+
+    return pwd;
+  }, '/');
+
+  // If configuration exists in the old location, read the file and unlink it.
+  if (fs.existsSync(LEGACY_PATH)) {
+    data = JSON.parse(fs.readFileSync(LEGACY_PATH, 'utf8'));
+    fs.unlinkSync(LEGACY_PATH);
+    return write();
+  } else if (!fs.existsSync(resolve(PATH, FILE))) {
     data = DEFAULT_CONFIG;
-    write();
-    return;
+    return write();
   }
 
-  data = JSON.parse(fs.readFileSync(PATH, 'utf8'));
+  data = JSON.parse(fs.readFileSync(resolve(PATH, FILE), 'utf8'));
   migrateConfig(data);
   validateConfig(data);
 };
